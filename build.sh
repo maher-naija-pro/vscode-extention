@@ -1,6 +1,6 @@
 
 
-#!/usr/bin/env bashgaf 
+#!/usr/bin/env bash 
 
 # VS Code Extension Build Script
 # This script automates the process of building and packaging the extension

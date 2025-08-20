@@ -1,7 +1,7 @@
 {
-    "name": "vscode-extension",
-    "displayName": "VS Code Extension",
-    "description": "A VS Code extension",
+    "name": "outscale-agent",
+    "displayName": "Outscale Agent",
+    "description": "An Outscale agent extension for VS Code",
     "version": "0.0.1",
     "engines": {
         "vscode": "^1.74.0"
