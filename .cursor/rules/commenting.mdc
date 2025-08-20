@@ -1,0 +1,173 @@
+# Code Commenting Rules
+
+## Overview
+This rule ensures that code is properly commented to improve readability, maintainability, and understanding for developers.
+
+## General Principles
+- **Clarity over brevity**: Comments should explain the "why" not just the "what"
+- **Keep comments up-to-date**: Outdated comments are worse than no comments
+- **Use meaningful variable names**: Good naming reduces the need for excessive comments
+- **Comment complex logic**: Explain business rules, algorithms, and non-obvious decisions
+
+## Comment Types and Guidelines
+
+### 1. Function/Method Comments
+```javascript
+/**
+ * Calculates the total price including tax and discounts
+ * @param {number} basePrice - The base price before any calculations
+ * @param {number} taxRate - Tax rate as a decimal (e.g., 0.08 for 8%)
+ * @param {number} discountPercent - Discount percentage (0-100)
+ * @returns {number} Final price after all calculations
+ */
+function calculateTotalPrice(basePrice, taxRate, discountPercent) {
+    // Apply discount first (discounts are calculated before tax)
+    const discountedPrice = basePrice * (1 - discountPercent / 100);
+    
+    // Add tax to the discounted price
+    const finalPrice = discountedPrice * (1 + taxRate);
+    
+    return Math.round(finalPrice * 100) / 100; // Round to 2 decimal places
+}
+```
+
+### 2. Inline Comments
+```javascript
+// Check if user has permission to access this resource
+if (user.role === 'admin' || user.permissions.includes('read')) {
+    // Allow access and log the action for audit purposes
+    grantAccess(user, resource);
+    auditLogger.log('access_granted', { userId: user.id, resourceId: resource.id });
+}
+```
+
+### 3. Block Comments for Complex Sections
+```javascript
+/*
+ * This section handles the complex business logic for order processing:
+ * 1. Validates inventory availability
+ * 2. Applies customer-specific pricing rules
+ * 3. Calculates shipping costs based on location and weight
+ * 4. Applies any active promotions or coupons
+ */
+```
+
+### 4. TODO Comments
+```javascript
+// TODO: Refactor this function to use the new API endpoint
+// TODO: Add error handling for network timeouts
+// FIXME: This calculation is incorrect for edge cases
+```
+
+### 5. Variable and Constant Comments
+```javascript
+const MAX_RETRY_ATTEMPTS = 3; // Maximum number of retry attempts for failed API calls
+const CACHE_TTL = 3600; // Cache time-to-live in seconds (1 hour)
+
+// Configuration object for the payment processor
+const paymentConfig = {
+    apiKey: process.env.PAYMENT_API_KEY,
+    timeout: 30000, // 30 seconds timeout for payment requests
+    retryCount: 2   // Number of retries for failed payments
+};
+```
+
+## Language-Specific Guidelines
+
+### JavaScript/TypeScript
+- Use JSDoc for function documentation
+- Comment complex object structures
+- Explain async operations and promises
+
+### Python
+- Use docstrings for functions and classes
+- Follow PEP 257 conventions
+- Explain complex list comprehensions or generator expressions
+
+### Java/C#
+- Use JavaDoc/C# XML documentation
+- Comment public APIs thoroughly
+- Explain design patterns and architectural decisions
+
+## When to Comment
+
+### ✅ Comment These:
+- Business logic and rules
+- Complex algorithms
+- Non-obvious code decisions
+- API endpoints and their purpose
+- Database queries and their intent
+- Error handling logic
+- Performance optimizations
+- Workarounds for known issues
+
+### ❌ Don't Comment These:
+- Obvious code (e.g., `i++` doesn't need "increment i")
+- Code that explains itself through good naming
+- Outdated or incorrect information
+- Comments that just repeat the code
+
+## Example Implementation
+
+```javascript
+// User authentication service
+class AuthService {
+    /**
+     * Authenticates a user with email and password
+     * @param {string} email - User's email address
+     * @param {string} password - User's password (will be hashed)
+     * @returns {Promise<Object>} User object if authentication succeeds
+     * @throws {Error} If authentication fails or user not found
+     */
+    async authenticateUser(email, password) {
+        // Validate input parameters
+        if (!email || !password) {
+            throw new Error('Email and password are required');
+        }
+        
+        // Find user by email (case-insensitive search)
+        const user = await this.userRepository.findByEmail(email.toLowerCase());
+        
+        if (!user) {
+            throw new Error('User not found');
+        }
+        
+        // Verify password using bcrypt for security
+        const isValidPassword = await bcrypt.compare(password, user.hashedPassword);
+        
+        if (!isValidPassword) {
+            throw new Error('Invalid password');
+        }
+        
+        // Update last login timestamp for user activity tracking
+        await this.userRepository.updateLastLogin(user.id, new Date());
+        
+        // Return user object without sensitive information
+        return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role
+        };
+    }
+}
+```
+
+## Best Practices Summary
+
+1. **Write self-documenting code** with clear variable and function names
+2. **Comment the "why" not the "what"** - explain reasoning and business logic
+3. **Keep comments current** - update them when code changes
+4. **Use consistent commenting style** throughout the project
+5. **Avoid redundant comments** that just repeat the code
+6. **Comment complex algorithms** step by step
+7. **Document public APIs** thoroughly
+8. **Use TODO comments** for future improvements
+9. **Explain non-obvious decisions** and trade-offs
+10. **Comment in the language of the business**, not just technical implementation
+
+Remember: Good comments make code maintainable and help other developers (including future you) understand the codebase quickly and accurately.
+description:
+globs:
+alwaysApply: true
+---
