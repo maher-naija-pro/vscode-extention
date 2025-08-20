@@ -1,0 +1,510 @@
+# Performance & Optimization for VS Code Extensions
+
+## Overview
+This rule ensures VS Code extensions are performant, memory-efficient, and provide smooth user experience through proper optimization techniques.
+
+## Extension Activation Performance
+
+### 1. Lazy Loading Strategy
+```typescript
+// ✅ Good: Lazy load heavy components
+export function activate(context: vscode.ExtensionContext): void {
+    // Register lightweight commands immediately
+    registerBasicCommands(context);
+    
+    // Lazy load heavy features on first use
+    const heavyCommand = vscode.commands.registerCommand('extension.heavy', async () => {
+        const { HeavyFeature } = await import('./heavyFeature');
+        const feature = new HeavyFeature();
+        await feature.execute();
+    });
+    
+    context.subscriptions.push(heavyCommand);
+}
+
+// ❌ Bad: Load everything on activation
+export function activate(context: vscode.ExtensionContext): void {
+    // This loads all modules immediately, slowing activation
+    const heavyFeature = new HeavyFeature();
+    const dataProcessor = new DataProcessor();
+    const analytics = new Analytics();
+    // ... more heavy objects
+}
+```
+
+### 2. Activation Events Optimization
+```json
+// ✅ Good: Specific activation events
+{
+    "activationEvents": [
+        "onCommand:extension.command",
+        "onLanguage:typescript",
+        "onView:extension.view"
+    ]
+}
+
+// ❌ Bad: Activate on everything
+{
+    "activationEvents": ["*"]
+}
+```
+
+### 3. Conditional Activation
+```typescript
+// ✅ Good: Check conditions before heavy operations
+export function activate(context: vscode.ExtensionContext): void {
+    // Only activate if workspace has relevant files
+    if (!hasRelevantFiles()) {
+        return;
+    }
+    
+    // Check if user has enabled the extension
+    const config = vscode.workspace.getConfiguration('extension');
+    if (!config.get('enabled', true)) {
+        return;
+    }
+    
+    initializeExtension(context);
+}
+
+function hasRelevantFiles(): boolean {
+    const files = vscode.workspace.findFiles('**/*.{ts,js,json}');
+    return files.length > 0;
+}
+```
+
+## Memory Management
+
+### 4. Resource Disposal
+```typescript
+// ✅ Good: Proper disposal pattern
+class ExtensionService {
+    private disposables = new vscode.DisposableStore();
+    private fileWatchers = new Map<string, vscode.FileSystemWatcher>();
+    
+    constructor() {
+        this.disposables.add(
+            vscode.workspace.onDidChangeTextDocument(this.handleDocumentChange.bind(this))
+        );
+    }
+    
+    dispose(): void {
+        // Dispose all resources
+        this.disposables.dispose();
+        
+        // Clear file watchers
+        for (const watcher of this.fileWatchers.values()) {
+            watcher.dispose();
+        }
+        this.fileWatchers.clear();
+    }
+    
+    private handleDocumentChange(event: vscode.TextDocumentChangeEvent): void {
+        // Implementation
+    }
+}
+```
+
+### 5. Event Listener Management
+```typescript
+// ✅ Good: Debounced event handling
+class DocumentProcessor {
+    private changeDebouncer: NodeJS.Timeout | undefined;
+    private readonly DEBOUNCE_DELAY = 300; // 300ms
+    
+    constructor() {
+        this.disposables.add(
+            vscode.workspace.onDidChangeTextDocument((event) => {
+                this.debouncedProcess(event);
+            })
+        );
+    }
+    
+    private debouncedProcess(event: vscode.TextDocumentChangeEvent): void {
+        if (this.changeDebouncer) {
+            clearTimeout(this.changeDebouncer);
+        }
+        
+        this.changeDebouncer = setTimeout(() => {
+            this.processDocument(event.document);
+        }, this.DEBOUNCE_DELAY);
+    }
+    
+    dispose(): void {
+        if (this.changeDebouncer) {
+            clearTimeout(this.changeDebouncer);
+        }
+        this.disposables.dispose();
+    }
+}
+```
+
+### 6. Cache Management
+```typescript
+// ✅ Good: LRU cache with size limits
+class DocumentCache {
+    private cache = new Map<string, { content: string; timestamp: number }>();
+    private readonly MAX_SIZE = 100;
+    private readonly TTL = 5 * 60 * 1000; // 5 minutes
+    
+    get(key: string): string | undefined {
+        const item = this.cache.get(key);
+        if (!item) return undefined;
+        
+        // Check TTL
+        if (Date.now() - item.timestamp > this.TTL) {
+            this.cache.delete(key);
+            return undefined;
+        }
+        
+        return item.content;
+    }
+    
+    set(key: string, content: string): void {
+        // Remove oldest items if cache is full
+        if (this.cache.size >= this.MAX_SIZE) {
+            const oldestKey = this.cache.keys().next().value;
+            this.cache.delete(oldestKey);
+        }
+        
+        this.cache.set(key, { content, timestamp: Date.now() });
+    }
+    
+    clear(): void {
+        this.cache.clear();
+    }
+}
+```
+
+## File System Operations
+
+### 7. Efficient File Processing
+```typescript
+// ✅ Good: Process files in chunks
+async function processLargeWorkspace(): Promise<void> {
+    const files = await vscode.workspace.findFiles('**/*.{ts,js}');
+    const CHUNK_SIZE = 10;
+    
+    for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+        const chunk = files.slice(i, i + CHUNK_SIZE);
+        
+        // Process chunk
+        await Promise.all(chunk.map(processFile));
+        
+        // Yield control to prevent blocking
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+}
+
+// ✅ Good: Use file watchers instead of polling
+class FileMonitor {
+    private watchers = new Map<string, vscode.FileSystemWatcher>();
+    
+    startWatching(pattern: string): void {
+        const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+        
+        watcher.onDidChange(this.handleFileChange.bind(this));
+        watcher.onDidCreate(this.handleFileCreate.bind(this));
+        watcher.onDidDelete(this.handleFileDelete.bind(this));
+        
+        this.watchers.set(pattern, watcher);
+    }
+    
+    private handleFileChange(uri: vscode.Uri): void {
+        // Handle file change efficiently
+        this.processFile(uri);
+    }
+}
+```
+
+### 8. Async File Operations
+```typescript
+// ✅ Good: Non-blocking file operations
+async function readFilesEfficiently(uris: vscode.Uri[]): Promise<string[]> {
+    const results: string[] = [];
+    const BATCH_SIZE = 5;
+    
+    for (let i = 0; i < uris.length; i += BATCH_SIZE) {
+        const batch = uris.slice(i, i + BATCH_SIZE);
+        
+        const batchResults = await Promise.all(
+            batch.map(uri => vscode.workspace.fs.readFile(uri))
+        );
+        
+        results.push(...batchResults.map(buffer => buffer.toString()));
+        
+        // Allow other operations to proceed
+        if (i + BATCH_SIZE < uris.length) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
+    
+    return results;
+}
+```
+
+## UI Performance
+
+### 9. Progress Indicators
+```typescript
+// ✅ Good: Show progress for long operations
+async function processLargeDataset(): Promise<void> {
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Processing data',
+        cancellable: true
+    }, async (progress, token) => {
+        const totalItems = 1000;
+        
+        for (let i = 0; i < totalItems; i++) {
+            // Check cancellation
+            if (token.isCancellationRequested) {
+                throw new Error('Operation cancelled');
+            }
+            
+            // Update progress
+            progress.report({
+                message: `Processing item ${i + 1} of ${totalItems}`,
+                increment: 100 / totalItems
+            });
+            
+            await processItem(i);
+        }
+    });
+}
+```
+
+### 10. Status Bar Updates
+```typescript
+// ✅ Good: Efficient status bar updates
+class StatusBarManager {
+    private statusBarItem: vscode.StatusBarItem;
+    private updateTimer: NodeJS.Timeout | undefined;
+    
+    constructor() {
+        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+        this.statusBarItem.show();
+    }
+    
+    updateStatus(message: string, priority: 'low' | 'normal' | 'high' = 'normal'): void {
+        // Debounce updates to prevent excessive UI updates
+        if (this.updateTimer) {
+            clearTimeout(this.updateTimer);
+        }
+        
+        this.updateTimer = setTimeout(() => {
+            this.statusBarItem.text = message;
+            this.statusBarItem.tooltip = message;
+            
+            // Set priority-based styling
+            if (priority === 'high') {
+                this.statusBarItem.backgroundColor = new vscode.ThemeColor('errorForeground');
+            } else if (priority === 'low') {
+                this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+            } else {
+                this.statusBarItem.backgroundColor = undefined;
+            }
+        }, 100); // 100ms debounce
+    }
+    
+    dispose(): void {
+        if (this.updateTimer) {
+            clearTimeout(this.updateTimer);
+        }
+        this.statusBarItem.dispose();
+    }
+}
+```
+
+## Algorithm Optimization
+
+### 11. Efficient Data Structures
+```typescript
+// ✅ Good: Use appropriate data structures
+class SymbolIndex {
+    private symbolMap = new Map<string, vscode.SymbolInformation[]>();
+    private uriMap = new Map<string, Set<string>>();
+    
+    addSymbol(symbol: vscode.SymbolInformation): void {
+        const key = symbol.name.toLowerCase();
+        
+        if (!this.symbolMap.has(key)) {
+            this.symbolMap.set(key, []);
+        }
+        this.symbolMap.get(key)!.push(symbol);
+        
+        // Track URIs for quick lookup
+        const uri = symbol.location.uri.toString();
+        if (!this.uriMap.has(uri)) {
+            this.uriMap.set(uri, new Set());
+        }
+        this.uriMap.get(uri)!.add(key);
+    }
+    
+    findSymbols(query: string): vscode.SymbolInformation[] {
+        const key = query.toLowerCase();
+        return this.symbolMap.get(key) || [];
+    }
+    
+    getSymbolsInFile(uri: string): vscode.SymbolInformation[] {
+        const keys = this.uriMap.get(uri) || new Set();
+        const symbols: vscode.SymbolInformation[] = [];
+        
+        for (const key of keys) {
+            symbols.push(...this.symbolMap.get(key) || []);
+        }
+        
+        return symbols;
+    }
+}
+```
+
+### 12. Lazy Evaluation
+```typescript
+// ✅ Good: Lazy evaluation for expensive operations
+class LazyDocumentAnalyzer {
+    private analysisCache = new Map<string, Promise<DocumentAnalysis>>();
+    
+    async analyzeDocument(document: vscode.TextDocument): Promise<DocumentAnalysis> {
+        const key = `${document.uri.toString()}-${document.version}`;
+        
+        if (this.analysisCache.has(key)) {
+            return this.analysisCache.get(key)!;
+        }
+        
+        // Create analysis promise
+        const analysisPromise = this.performAnalysis(document);
+        this.analysisCache.set(key, analysisPromise);
+        
+        // Clean up old entries
+        if (this.analysisCache.size > 50) {
+            const oldestKey = this.analysisCache.keys().next().value;
+            this.analysisCache.delete(oldestKey);
+        }
+        
+        return analysisPromise;
+    }
+    
+    private async performAnalysis(document: vscode.TextDocument): Promise<DocumentAnalysis> {
+        // Expensive analysis operation
+        return new DocumentAnalysis(document);
+    }
+}
+```
+
+## Performance Monitoring
+
+### 13. Performance Metrics
+```typescript
+// ✅ Good: Track performance metrics
+class PerformanceMonitor {
+    private metrics = new Map<string, number[]>();
+    
+    timeOperation<T>(name: string, operation: () => T | Promise<T>): T | Promise<T> {
+        const startTime = performance.now();
+        
+        if (operation.constructor.name === 'AsyncFunction') {
+            return (operation as () => Promise<T>)().finally(() => {
+                this.recordMetric(name, performance.now() - startTime);
+            });
+        } else {
+            try {
+                const result = (operation as () => T)();
+                this.recordMetric(name, performance.now() - startTime);
+                return result;
+            } catch (error) {
+                this.recordMetric(name, performance.now() - startTime);
+                throw error;
+            }
+        }
+    }
+    
+    private recordMetric(name: string, duration: number): void {
+        if (!this.metrics.has(name)) {
+            this.metrics.set(name, []);
+        }
+        
+        this.metrics.get(name)!.push(duration);
+        
+        // Keep only last 100 measurements
+        if (this.metrics.get(name)!.length > 100) {
+            this.metrics.get(name)!.shift();
+        }
+    }
+    
+    getAverageTime(name: string): number {
+        const times = this.metrics.get(name) || [];
+        if (times.length === 0) return 0;
+        
+        return times.reduce((sum, time) => sum + time, 0) / times.length;
+    }
+    
+    logPerformanceReport(): void {
+        console.log('Performance Report:');
+        for (const [name, times] of this.metrics) {
+            const avg = this.getAverageTime(name);
+            const min = Math.min(...times);
+            const max = Math.max(...times);
+            console.log(`${name}: avg=${avg.toFixed(2)}ms, min=${min.toFixed(2)}ms, max=${max.toFixed(2)}ms`);
+        }
+    }
+}
+```
+
+### 14. Memory Usage Monitoring
+```typescript
+// ✅ Good: Monitor memory usage
+class MemoryMonitor {
+    private initialMemory: number;
+    
+    constructor() {
+        this.initialMemory = process.memoryUsage().heapUsed;
+    }
+    
+    logMemoryUsage(label: string): void {
+        const currentMemory = process.memoryUsage();
+        const heapUsed = currentMemory.heapUsed;
+        const heapTotal = currentMemory.heapTotal;
+        const external = currentMemory.external;
+        
+        console.log(`${label}:`, {
+            heapUsed: `${(heapUsed / 1024 / 1024).toFixed(2)} MB`,
+            heapTotal: `${(heapTotal / 1024 / 1024).toFixed(2)} MB`,
+            external: `${(external / 1024 / 1024).toFixed(2)} MB`,
+            increase: `${((heapUsed - this.initialMemory) / 1024 / 1024).toFixed(2)} MB`
+        });
+    }
+    
+    checkMemoryLeak(): boolean {
+        const currentMemory = process.memoryUsage().heapUsed;
+        const increase = currentMemory - this.initialMemory;
+        const threshold = 100 * 1024 * 1024; // 100MB
+        
+        if (increase > threshold) {
+            console.warn(`Potential memory leak detected: ${(increase / 1024 / 1024).toFixed(2)} MB increase`);
+            return true;
+        }
+        
+        return false;
+    }
+}
+```
+
+## Best Practices Summary
+
+1. **Use lazy loading** for heavy components and features
+2. **Implement proper disposal** of all resources and event listeners
+3. **Debounce frequent events** to prevent excessive processing
+4. **Use appropriate data structures** for your use case
+5. **Process large datasets in chunks** to prevent blocking
+6. **Show progress indicators** for long-running operations
+7. **Monitor performance metrics** to identify bottlenecks
+8. **Use file watchers** instead of polling for file changes
+9. **Implement caching** for expensive operations
+10. **Clean up resources** when extensions are deactivated
+
+Remember: Performance optimization is an ongoing process. Monitor your extension's performance and optimize based on real-world usage patterns.
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,675 @@
+# User Experience & UI for VS Code Extensions
+
+## Overview
+This rule ensures VS Code extensions provide excellent user experience through intuitive interfaces, clear feedback, and consistent design patterns that integrate seamlessly with VS Code.
+
+## Command Palette Design
+
+### 1. Command Naming & Organization
+```typescript
+// ✅ Good: Clear, descriptive command names
+export function registerCommands(context: vscode.ExtensionContext): void {
+    // Use consistent naming patterns
+    const commands = [
+        {
+            command: 'extension.documentation.generate',
+            title: 'Generate Documentation',
+            category: 'Documentation'
+        },
+        {
+            command: 'extension.documentation.preview',
+            title: 'Preview Documentation',
+            category: 'Documentation'
+        },
+        {
+            command: 'extension.documentation.export',
+            title: 'Export Documentation',
+            category: 'Documentation'
+        }
+    ];
+    
+    commands.forEach(({ command, title, category }) => {
+        const disposable = vscode.commands.registerCommand(command, () => {
+            executeCommand(command);
+        });
+        context.subscriptions.push(disposable);
+    });
+}
+
+// ❌ Bad: Unclear command names
+const badCommands = [
+    'extension.docs',           // Too vague
+    'extension.doStuff',        // Unclear purpose
+    'extension.process',        // What does it process?
+];
+```
+
+### 2. Command Categories & Grouping
+```typescript
+// ✅ Good: Logical command grouping
+export const commandCategories = {
+    'Documentation': [
+        'extension.docs.generate',
+        'extension.docs.preview',
+        'extension.docs.export'
+    ],
+    'Analysis': [
+        'extension.analyze.complexity',
+        'extension.analyze.coverage',
+        'extension.analyze.performance'
+    ],
+    'Tools': [
+        'extension.tools.format',
+        'extension.tools.lint',
+        'extension.tools.test'
+    ]
+};
+
+// Register commands with proper categorization
+export function registerCategorizedCommands(context: vscode.ExtensionContext): void {
+    for (const [category, commandIds] of Object.entries(commandCategories)) {
+        commandIds.forEach(commandId => {
+            const disposable = vscode.commands.registerCommand(commandId, () => {
+                executeCategorizedCommand(commandId, category);
+            });
+            context.subscriptions.push(disposable);
+        });
+    }
+}
+```
+
+## Status Bar Integration
+
+### 3. Status Bar Items
+```typescript
+// ✅ Good: Informative status bar items
+class StatusBarManager {
+    private statusBarItem: vscode.StatusBarItem;
+    private progressItem: vscode.StatusBarItem;
+    
+    constructor() {
+        // Main status item
+        this.statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Left,
+            100
+        );
+        this.statusBarItem.name = 'Extension Status';
+        this.statusBarItem.tooltip = 'Click to show extension information';
+        this.statusBarItem.command = 'extension.showStatus';
+        
+        // Progress indicator
+        this.progressItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Left,
+            99
+        );
+        this.progressItem.name = 'Extension Progress';
+        
+        this.show();
+    }
+    
+    updateStatus(message: string, icon: string = '$(check)'): void {
+        this.statusBarItem.text = `${icon} ${message}`;
+        this.statusBarItem.show();
+    }
+    
+    showProgress(message: string, percentage?: number): void {
+        if (percentage !== undefined) {
+            this.progressItem.text = `$(sync~spin) ${message} (${percentage}%)`;
+        } else {
+            this.progressItem.text = `$(sync~spin) ${message}`;
+        }
+        this.progressItem.show();
+    }
+    
+    hideProgress(): void {
+        this.progressItem.hide();
+    }
+    
+    show(): void {
+        this.statusBarItem.show();
+    }
+    
+    hide(): void {
+        this.statusBarItem.hide();
+        this.progressItem.hide();
+    }
+    
+    dispose(): void {
+        this.statusBarItem.dispose();
+        this.progressItem.dispose();
+    }
+}
+```
+
+### 4. Status Bar Context Menus
+```typescript
+// ✅ Good: Context-aware status bar actions
+class ContextualStatusBar {
+    private statusBarItem: vscode.StatusBarItem;
+    
+    constructor() {
+        this.statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Left,
+            98
+        );
+        
+        // Update status based on active editor
+        this.updateStatusForEditor(vscode.window.activeTextEditor);
+        
+        // Listen for editor changes
+        vscode.window.onDidChangeActiveTextEditor(editor => {
+            this.updateStatusForEditor(editor);
+        });
+    }
+    
+    private updateStatusForEditor(editor: vscode.TextEditor | undefined): void {
+        if (!editor) {
+            this.statusBarItem.hide();
+            return;
+        }
+        
+        const document = editor.document;
+        const languageId = document.languageId;
+        
+        if (this.isSupportedLanguage(languageId)) {
+            this.statusBarItem.text = `$(code) ${languageId.toUpperCase()}`;
+            this.statusBarItem.tooltip = `Analyze ${languageId} file`;
+            this.statusBarItem.command = 'extension.analyze.current';
+            this.statusBarItem.show();
+        } else {
+            this.statusBarItem.hide();
+        }
+    }
+    
+    private isSupportedLanguage(languageId: string): boolean {
+        return ['typescript', 'javascript', 'python', 'java'].includes(languageId);
+    }
+    
+    dispose(): void {
+        this.statusBarItem.dispose();
+    }
+}
+```
+
+## Progress & Feedback
+
+### 5. Progress Indicators
+```typescript
+// ✅ Good: Comprehensive progress feedback
+class ProgressManager {
+    async executeWithProgress<T>(
+        title: string,
+        task: (progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken) => Promise<T>
+    ): Promise<T> {
+        return vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: title,
+            cancellable: true
+        }, async (progress, token) => {
+            try {
+                return await task(progress, token);
+            } catch (error) {
+                if (token.isCancellationRequested) {
+                    throw new Error('Operation cancelled by user');
+                }
+                throw error;
+            }
+        });
+    }
+    
+    async executeBackgroundTask<T>(
+        title: string,
+        task: (progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken) => Promise<T>
+    ): Promise<T> {
+        return vscode.window.withProgress({
+            location: vscode.ProgressLocation.Window,
+            title: title,
+            cancellable: true
+        }, async (progress, token) => {
+            return await task(progress, token);
+        });
+    }
+    
+    async executeStatusBarProgress<T>(
+        message: string,
+        task: (progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken) => Promise<T>
+    ): Promise<T> {
+        return vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: message,
+            cancellable: false
+        }, async (progress, token) => {
+            return await task(progress, token);
+        });
+    }
+}
+
+// Usage example
+const progressManager = new ProgressManager();
+
+async function processFiles(files: vscode.Uri[]): Promise<void> {
+    await progressManager.executeWithProgress(
+        'Processing files',
+        async (progress, token) => {
+            for (let i = 0; i < files.length; i++) {
+                if (token.isCancellationRequested) {
+                    break;
+                }
+                
+                const file = files[i];
+                progress.report({
+                    message: `Processing ${path.basename(file.fsPath)}`,
+                    increment: 100 / files.length
+                });
+                
+                await processFile(file);
+            }
+        }
+    );
+}
+```
+
+### 6. User Notifications
+```typescript
+// ✅ Good: Appropriate notification levels
+class NotificationManager {
+    static async showInfo(message: string, ...actions: string[]): Promise<string | undefined> {
+        return vscode.window.showInformationMessage(message, ...actions);
+    }
+    
+    static async showWarning(message: string, ...actions: string[]): Promise<string | undefined> {
+        return vscode.window.showWarningMessage(message, ...actions);
+    }
+    
+    static async showError(message: string, ...actions: string[]): Promise<string | undefined> {
+        return vscode.window.showErrorMessage(message, ...actions);
+    }
+    
+    static async showModalInfo(message: string, ...actions: string[]): Promise<string | undefined> {
+        return vscode.window.showInformationMessage(message, { modal: true }, ...actions);
+    }
+    
+    static async showModalWarning(message: string, ...actions: string[]): Promise<string | undefined> {
+        return vscode.window.showWarningMessage(message, { modal: true }, ...actions);
+    }
+    
+    static async showModalError(message: string, ...actions: string[]): Promise<string | undefined> {
+        return vscode.window.showErrorMessage(message, { modal: true }, ...actions);
+    }
+    
+    // Context-aware notifications
+    static async showContextualMessage(
+        message: string,
+        severity: 'info' | 'warning' | 'error' = 'info',
+        context?: string
+    ): Promise<void> {
+        const contextualMessage = context ? `[${context}] ${message}` : message;
+        
+        switch (severity) {
+            case 'info':
+                await this.showInfo(contextualMessage);
+                break;
+            case 'warning':
+                await this.showWarning(contextualMessage);
+                break;
+            case 'error':
+                await this.showError(contextualMessage);
+                break;
+        }
+    }
+}
+```
+
+## Input & Configuration
+
+### 7. User Input Collection
+```typescript
+// ✅ Good: Intuitive input collection
+class UserInputCollector {
+    static async collectString(
+        prompt: string,
+        placeholder?: string,
+        value?: string
+    ): Promise<string | undefined> {
+        return vscode.window.showInputBox({
+            prompt,
+            placeHolder: placeholder,
+            value,
+            validateInput: (input) => {
+                if (!input || input.trim().length === 0) {
+                    return 'Input cannot be empty';
+                }
+                return null;
+            }
+        });
+    }
+    
+    static async collectChoice<T>(
+        prompt: string,
+        choices: { label: string; value: T; description?: string }[]
+    ): Promise<T | undefined> {
+        const items = choices.map(choice => ({
+            label: choice.label,
+            description: choice.description,
+            value: choice.value
+        }));
+        
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: prompt
+        });
+        
+        return selected?.value;
+    }
+    
+    static async collectMultipleChoices<T>(
+        prompt: string,
+        choices: { label: string; value: T; description?: string }[]
+    ): Promise<T[]> {
+        const items = choices.map(choice => ({
+            label: choice.label,
+            description: choice.description,
+            value: choice.value,
+            picked: false
+        }));
+        
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: prompt,
+            canPickMany: true
+        });
+        
+        return selected?.map(item => item.value) || [];
+    }
+    
+    static async collectFilePath(
+        prompt: string,
+        filters?: { [name: string]: string[] }
+    ): Promise<vscode.Uri | undefined> {
+        const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            filters
+        });
+        
+        return uris?.[0];
+    }
+    
+    static async collectFolderPath(
+        prompt: string
+    ): Promise<vscode.Uri | undefined> {
+        const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false
+        });
+        
+        return uris?.[0];
+    }
+}
+```
+
+### 8. Configuration Management
+```typescript
+// ✅ Good: User-friendly configuration
+class ConfigurationManager {
+    private readonly configSection = 'extension';
+    
+    get<T>(key: string, defaultValue: T): T {
+        return vscode.workspace.getConfiguration(this.configSection).get(key, defaultValue);
+    }
+    
+    async update<T>(key: string, value: T): Promise<void> {
+        await vscode.workspace.getConfiguration(this.configSection).update(key, value);
+    }
+    
+    // Provide configuration UI
+    async showConfigurationUI(): Promise<void> {
+        const action = await vscode.window.showInformationMessage(
+            'Extension configuration updated. Would you like to review settings?',
+            'Open Settings',
+            'Dismiss'
+        );
+        
+        if (action === 'Open Settings') {
+            await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${this.configSection}`);
+        }
+    }
+    
+    // Validate configuration
+    validateConfiguration(): { isValid: boolean; errors: string[] } {
+        const errors: string[] = [];
+        
+        const maxFileSize = this.get<number>('maxFileSize', 10);
+        if (maxFileSize <= 0 || maxFileSize > 1000) {
+            errors.push('maxFileSize must be between 1 and 1000 MB');
+        }
+        
+        const timeout = this.get<number>('timeout', 30000);
+        if (timeout < 1000 || timeout > 300000) {
+            errors.push('timeout must be between 1000 and 300000 ms');
+        }
+        
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    }
+}
+```
+
+## Error Handling & User Guidance
+
+### 9. User-Friendly Error Messages
+```typescript
+// ✅ Good: Clear, actionable error messages
+class UserFriendlyErrorHandler {
+    static async handleError(error: Error, context: string): Promise<void> {
+        // Log full error for debugging
+        console.error(`Error in ${context}:`, error);
+        
+        // Provide user-friendly error message
+        const userMessage = this.getUserFriendlyMessage(error);
+        const actions = this.getSuggestedActions(error);
+        
+        const selectedAction = await vscode.window.showErrorMessage(
+            userMessage,
+            ...actions
+        );
+        
+        if (selectedAction) {
+            await this.executeAction(selectedAction, error);
+        }
+    }
+    
+    private static getUserFriendlyMessage(error: Error): string {
+        // Map technical errors to user-friendly messages
+        const errorMessages: Record<string, string> = {
+            'ENOENT': 'The specified file or directory could not be found.',
+            'EACCES': 'You do not have permission to access this file or directory.',
+            'ENOSPC': 'There is not enough disk space to complete this operation.',
+            'ETIMEDOUT': 'The operation timed out. Please try again.',
+            'ECONNREFUSED': 'Could not connect to the server. Please check your internet connection.'
+        };
+        
+        // Try to match error code
+        for (const [code, message] of Object.entries(errorMessages)) {
+            if (error.message.includes(code)) {
+                return message;
+            }
+        }
+        
+        // Fallback to generic message
+        return 'An unexpected error occurred. Please try again or contact support if the problem persists.';
+    }
+    
+    private static getSuggestedActions(error: Error): string[] {
+        const actions: string[] = [];
+        
+        if (error.message.includes('ENOENT')) {
+            actions.push('Browse for File', 'Check File Path');
+        } else if (error.message.includes('EACCES')) {
+            actions.push('Check Permissions', 'Run as Administrator');
+        } else if (error.message.includes('ETIMEDOUT')) {
+            actions.push('Retry', 'Check Network');
+        }
+        
+        actions.push('View Details', 'Report Issue');
+        return actions;
+    }
+    
+    private static async executeAction(action: string, error: Error): Promise<void> {
+        switch (action) {
+            case 'Browse for File':
+                await vscode.commands.executeCommand('workbench.action.files.openFile');
+                break;
+            case 'Check File Path':
+                await vscode.commands.executeCommand('workbench.action.quickOpen');
+                break;
+            case 'Retry':
+                // Implement retry logic
+                break;
+            case 'View Details':
+                await this.showErrorDetails(error);
+                break;
+            case 'Report Issue':
+                await this.reportIssue(error);
+                break;
+        }
+    }
+    
+    private static async showErrorDetails(error: Error): Promise<void> {
+        const document = await vscode.workspace.openTextDocument({
+            content: `Error Details:\n\n${error.stack || error.message}`,
+            language: 'markdown'
+        });
+        
+        await vscode.window.showTextDocument(document);
+    }
+    
+    private static async reportIssue(error: Error): Promise<void> {
+        const issueBody = `## Error Report\n\n**Error:** ${error.message}\n\n**Stack Trace:**\n\`\`\`\n${error.stack}\n\`\`\`\n\n**Extension Version:** ${vscode.extensions.getExtension('your-extension.id')?.packageJSON.version}\n**VS Code Version:** ${vscode.version}`;
+        
+        const encodedBody = encodeURIComponent(issueBody);
+        const url = `https://github.com/your-repo/issues/new?body=${encodedBody}&title=Extension Error: ${encodeURIComponent(error.message)}`;
+        
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+    }
+}
+```
+
+### 10. Help & Documentation
+```typescript
+// ✅ Good: Integrated help system
+class HelpSystem {
+    static async showHelp(): Promise<void> {
+        const helpItems = [
+            {
+                label: '$(book) Documentation',
+                description: 'View extension documentation',
+                action: 'showDocs'
+            },
+            {
+                label: '$(question) Quick Start',
+                description: 'Learn how to get started',
+                action: 'showQuickStart'
+            },
+            {
+                label: '$(gear) Configuration',
+                description: 'Configure extension settings',
+                action: 'showConfig'
+            },
+            {
+                label: '$(megaphone) Report Issue',
+                description: 'Report a bug or request feature',
+                action: 'reportIssue'
+            },
+            {
+                label: '$(heart) Give Feedback',
+                description: 'Share your thoughts',
+                action: 'giveFeedback'
+            }
+        ];
+        
+        const selected = await vscode.window.showQuickPick(helpItems, {
+            placeHolder: 'How can we help you?'
+        });
+        
+        if (selected) {
+            await this.executeHelpAction(selected.action);
+        }
+    }
+    
+    private static async executeHelpAction(action: string): Promise<void> {
+        switch (action) {
+            case 'showDocs':
+                await vscode.env.openExternal(vscode.Uri.parse('https://your-docs-url.com'));
+                break;
+            case 'showQuickStart':
+                await this.showQuickStartGuide();
+                break;
+            case 'showConfig':
+                await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:your-extension');
+                break;
+            case 'reportIssue':
+                await this.reportIssue();
+                break;
+            case 'giveFeedback':
+                await this.giveFeedback();
+                break;
+        }
+    }
+    
+    private static async showQuickStartGuide(): Promise<void> {
+        const guide = `# Quick Start Guide
+
+## Getting Started
+
+1. **Open a file** in your workspace
+2. **Use Command Palette** (Ctrl+Shift+P) and type "Extension:"
+3. **Choose your command** from the list
+4. **Follow the prompts** to complete your task
+
+## Common Commands
+
+- \`Extension: Analyze File\` - Analyze current file
+- \`Extension: Generate Report\` - Create analysis report
+- \`Extension: Show Help\` - Display this guide
+
+## Need Help?
+
+- Use \`Extension: Show Help\` anytime
+- Check the status bar for current status
+- Look for progress indicators during long operations
+
+Happy coding! 🚀`;
+
+        const document = await vscode.workspace.openTextDocument({
+            content: guide,
+            language: 'markdown'
+        });
+        
+        await vscode.window.showTextDocument(document);
+    }
+}
+```
+
+## Best Practices Summary
+
+1. **Use clear, descriptive command names** that explain their purpose
+2. **Group related commands** into logical categories
+3. **Provide immediate feedback** through status bar and progress indicators
+4. **Use appropriate notification levels** (info, warning, error)
+5. **Implement comprehensive progress tracking** for long operations
+6. **Collect user input intuitively** with validation and suggestions
+7. **Handle errors gracefully** with actionable error messages
+8. **Provide integrated help** and documentation
+9. **Use consistent UI patterns** that match VS Code's design
+10. **Respect user preferences** and provide configuration options
+11. **Show context-aware information** in status bar and UI
+12. **Implement proper cleanup** when extensions are deactivated
+
+Remember: Great user experience is about making complex operations feel simple and intuitive. Always think from the user's perspective and provide clear guidance at every step.
+description:
+globs:
+alwaysApply: false
+---

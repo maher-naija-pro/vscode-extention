@@ -1,0 +1,468 @@
+# Testing & Quality Assurance for VS Code Extensions
+
+## Overview
+This rule ensures comprehensive testing coverage for VS Code extensions, covering unit tests, integration tests, and quality assurance practices.
+
+## Testing Strategy
+
+### 1. Testing Pyramid
+- **Unit Tests**: 70% - Test individual functions and classes in isolation
+- **Integration Tests**: 20% - Test VS Code API interactions
+- **End-to-End Tests**: 10% - Test complete user workflows
+
+### 2. Test Organization
+```
+src/
+├── extension.ts
+├── commands/
+├── providers/
+└── test/
+    ├── unit/           # Unit tests
+    ├── integration/    # Integration tests
+    ├── fixtures/       # Test data and mocks
+    └── utils/          # Test utilities
+```
+
+## Unit Testing
+
+### 3. Core Logic Testing
+```typescript
+// ✅ Good: Test business logic in isolation
+import { expect } from 'chai';
+import { DocumentProcessor } from '../src/documentProcessor';
+
+describe('DocumentProcessor', () => {
+    let processor: DocumentProcessor;
+    
+    beforeEach(() => {
+        processor = new DocumentProcessor();
+    });
+    
+    describe('processText', () => {
+        it('should remove extra whitespace', () => {
+            const input = '  hello   world  ';
+            const expected = 'hello world';
+            const result = processor.processText(input);
+            expect(result).to.equal(expected);
+        });
+        
+        it('should handle empty strings', () => {
+            const result = processor.processText('');
+            expect(result).to.equal('');
+        });
+        
+        it('should preserve single spaces', () => {
+            const input = 'hello world';
+            const result = processor.processText(input);
+            expect(result).to.equal(input);
+        });
+    });
+});
+```
+
+### 4. Mock VS Code API
+```typescript
+// ✅ Good: Mock VS Code API for unit tests
+import * as sinon from 'sinon';
+import { TextDocument, Position, Range } from 'vscode';
+
+describe('CommandHandler', () => {
+    let mockDocument: sinon.SinonStubbedInstance<TextDocument>;
+    let mockPosition: Position;
+    
+    beforeEach(() => {
+        mockDocument = sinon.createStubInstance(TextDocument);
+        mockDocument.getText.returns('test content');
+        mockDocument.getWordRangeAtPosition.returns(new Range(0, 0, 0, 4));
+        
+        mockPosition = new Position(0, 2);
+    });
+    
+    afterEach(() => {
+        sinon.restore();
+    });
+    
+    it('should process document content correctly', () => {
+        const handler = new CommandHandler();
+        const result = handler.processDocument(mockDocument, mockPosition);
+        
+        expect(result).to.equal('test');
+        expect(mockDocument.getText).to.have.been.calledOnce;
+    });
+});
+```
+
+### 5. Test Utilities
+```typescript
+// ✅ Good: Reusable test utilities
+export class TestUtils {
+    static createMockDocument(content: string, languageId: string = 'typescript'): TextDocument {
+        return {
+            getText: () => content,
+            getWordRangeAtPosition: (position: Position) => {
+                const word = this.extractWordAtPosition(content, position);
+                return new Range(position.line, position.character, position.line, position.character + word.length);
+            },
+            languageId,
+            uri: { fsPath: '/test/file.ts' } as any,
+            fileName: 'test.ts',
+            isUntitled: false,
+            isDirty: false,
+            isClosed: false,
+            version: 1,
+            lineCount: content.split('\n').length
+        } as TextDocument;
+    }
+    
+    static createMockPosition(line: number, character: number): Position {
+        return new Position(line, character);
+    }
+    
+    private static extractWordAtPosition(content: string, position: Position): string {
+        const lines = content.split('\n');
+        const line = lines[position.line] || '';
+        const words = line.split(/\s+/);
+        let currentPos = 0;
+        
+        for (const word of words) {
+            if (currentPos <= position.character && position.character < currentPos + word.length) {
+                return word;
+            }
+            currentPos += word.length + 1; // +1 for space
+        }
+        
+        return '';
+    }
+}
+```
+
+## Integration Testing
+
+### 6. VS Code Extension Testing
+```typescript
+// ✅ Good: Test extension activation and commands
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Extension Integration Tests', () => {
+    test('Extension should activate', async () => {
+        const extension = vscode.extensions.getExtension('your-extension.id');
+        assert.ok(extension);
+        
+        await extension.activate();
+        assert.strictEqual(extension.isActive, true);
+    });
+    
+    test('Commands should be registered', async () => {
+        const commands = await vscode.commands.getCommands();
+        assert.ok(commands.includes('extension.helloWorld'));
+    });
+    
+    test('Command should execute successfully', async () => {
+        const result = await vscode.commands.executeCommand('extension.helloWorld');
+        // Assert expected behavior
+        assert.ok(result !== undefined);
+    });
+});
+```
+
+### 7. Document Provider Testing
+```typescript
+// ✅ Good: Test document content providers
+suite('Document Provider Tests', () => {
+    let provider: vscode.TextDocumentContentProvider;
+    
+    setup(() => {
+        provider = new MyDocumentProvider();
+    });
+    
+    test('should provide content for valid URI', async () => {
+        const uri = vscode.Uri.parse('my-scheme://test');
+        const content = await provider.provideTextDocumentContent(uri);
+        
+        assert.strictEqual(typeof content, 'string');
+        assert.ok(content.length > 0);
+    });
+    
+    test('should handle invalid URI gracefully', async () => {
+        const uri = vscode.Uri.parse('invalid://test');
+        
+        try {
+            await provider.provideTextDocumentContent(uri);
+            assert.fail('Should have thrown an error');
+        } catch (error) {
+            assert.ok(error instanceof Error);
+        }
+    });
+});
+```
+
+## Test Fixtures & Data
+
+### 8. Test Data Management
+```typescript
+// ✅ Good: Centralized test fixtures
+export const TestFixtures = {
+    documents: {
+        typescript: {
+            simple: `function hello() {
+    return "world";
+}`,
+            withErrors: `function hello() {
+    return "world"
+    // Missing semicolon
+}`,
+            complex: `interface User {
+    id: string;
+    name: string;
+    email: string;
+}
+
+class UserService {
+    async getUser(id: string): Promise<User | null> {
+        // Implementation
+        return null;
+    }
+}`
+        },
+        json: {
+            valid: `{
+    "name": "test",
+    "value": 42
+}`,
+            invalid: `{
+    "name": "test",
+    "value": 42
+    // Missing closing brace`
+        }
+    },
+    
+    positions: {
+        start: new Position(0, 0),
+        middle: new Position(1, 5),
+        end: new Position(10, 0)
+    },
+    
+    ranges: {
+        singleLine: new Range(0, 0, 0, 10),
+        multiLine: new Range(0, 0, 5, 0),
+        empty: new Range(0, 0, 0, 0)
+    }
+};
+```
+
+### 9. Mock Factories
+```typescript
+// ✅ Good: Factory functions for common mocks
+export class MockFactory {
+    static createMockWorkspaceFolder(name: string, path: string): vscode.WorkspaceFolder {
+        return {
+            name,
+            uri: vscode.Uri.file(path),
+            index: 0
+        };
+    }
+    
+    static createMockTextEditor(document: vscode.TextDocument): vscode.TextEditor {
+        return {
+            document,
+            selection: new vscode.Selection(0, 0, 0, 0),
+            selections: [new vscode.Selection(0, 0, 0, 0)],
+            visibleRanges: [new vscode.Range(0, 0, 10, 0)],
+            options: {},
+            viewColumn: vscode.ViewColumn.One,
+            edit: async (editBuilder: vscode.TextEditorEdit) => {
+                // Mock implementation
+            },
+            insertSnippet: async () => {
+                // Mock implementation
+            },
+            setDecorations: () => {
+                // Mock implementation
+            },
+            revealRange: () => {
+                // Mock implementation
+            },
+            show: () => {
+                // Mock implementation
+            },
+            hide: () => {
+                // Mock implementation
+            }
+        } as vscode.TextEditor;
+    }
+}
+```
+
+## Test Coverage & Quality
+
+### 10. Coverage Requirements
+```typescript
+// ✅ Good: Ensure comprehensive test coverage
+describe('Coverage Requirements', () => {
+    it('should have 100% function coverage', () => {
+        // Use coverage tools to verify
+        const coverage = getCoverage();
+        expect(coverage.functions).to.be.at.least(100);
+    });
+    
+    it('should have 90%+ line coverage', () => {
+        const coverage = getCoverage();
+        expect(coverage.lines).to.be.at.least(90);
+    });
+    
+    it('should have 100% branch coverage for critical paths', () => {
+        const coverage = getCoverage();
+        expect(coverage.branches).to.be.at.least(95);
+    });
+});
+```
+
+### 11. Performance Testing
+```typescript
+// ✅ Good: Test performance characteristics
+describe('Performance Tests', () => {
+    it('should process large documents within time limit', () => {
+        const largeDocument = 'a\n'.repeat(10000); // 10k lines
+        const startTime = Date.now();
+        
+        const processor = new DocumentProcessor();
+        const result = processor.processText(largeDocument);
+        
+        const endTime = Date.now();
+        const processingTime = endTime - startTime;
+        
+        expect(processingTime).to.be.lessThan(100); // 100ms limit
+        expect(result).to.be.a('string');
+    });
+    
+    it('should handle memory efficiently', () => {
+        const initialMemory = process.memoryUsage().heapUsed;
+        
+        // Perform memory-intensive operation
+        const processor = new DocumentProcessor();
+        for (let i = 0; i < 1000; i++) {
+            processor.processText(`test content ${i}`);
+        }
+        
+        const finalMemory = process.memoryUsage().heapUsed;
+        const memoryIncrease = finalMemory - initialMemory;
+        
+        // Memory increase should be reasonable (less than 10MB)
+        expect(memoryIncrease).to.be.lessThan(10 * 1024 * 1024);
+    });
+});
+```
+
+## Error Testing
+
+### 12. Error Scenarios
+```typescript
+// ✅ Good: Test error handling thoroughly
+describe('Error Handling', () => {
+    it('should handle file system errors gracefully', async () => {
+        const mockFs = sinon.stub(vscode.workspace.fs, 'readFile');
+        mockFs.rejects(new Error('File not found'));
+        
+        try {
+            const handler = new FileHandler();
+            await handler.readFile('nonexistent.txt');
+            assert.fail('Should have thrown an error');
+        } catch (error) {
+            expect(error.message).to.include('File not found');
+        } finally {
+            mockFs.restore();
+        }
+    });
+    
+    it('should handle invalid user input', () => {
+        const processor = new InputProcessor();
+        
+        expect(() => processor.processInput('')).to.throw('Input cannot be empty');
+        expect(() => processor.processInput(null as any)).to.throw('Input must be a string');
+        expect(() => processor.processInput(undefined as any)).to.throw('Input must be a string');
+    });
+    
+    it('should handle network timeouts', async () => {
+        const mockApi = sinon.stub(apiClient, 'fetch');
+        mockApi.rejects(new Error('Request timeout'));
+        
+        const service = new ApiService();
+        const result = await service.fetchData();
+        
+        expect(result.success).to.be.false;
+        expect(result.error).to.include('timeout');
+        
+        mockApi.restore();
+    });
+});
+```
+
+## Test Configuration
+
+### 13. Test Environment Setup
+```typescript
+// ✅ Good: Configure test environment properly
+// test/setup.ts
+import * as vscode from 'vscode';
+import * as sinon from 'sinon';
+
+beforeEach(() => {
+    // Reset VS Code workspace state
+    sinon.stub(vscode.workspace, 'getConfiguration').returns({
+        get: sinon.stub().returns('default'),
+        update: sinon.stub().resolves(),
+        has: sinon.stub().returns(false),
+        inspect: sinon.stub().returns(undefined)
+    } as any);
+    
+    // Reset window state
+    sinon.stub(vscode.window, 'showInformationMessage').resolves();
+    sinon.stub(vscode.window, 'showErrorMessage').resolves();
+    sinon.stub(vscode.window, 'showWarningMessage').resolves();
+});
+
+afterEach(() => {
+    sinon.restore();
+});
+```
+
+### 14. Continuous Integration
+```yaml
+# ✅ Good: CI/CD pipeline for testing
+# .github/workflows/test.yml
+name: Test Extension
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:coverage
+```
+
+## Best Practices Summary
+
+1. **Test business logic in isolation** from VS Code API
+2. **Mock VS Code API** for predictable unit tests
+3. **Use test fixtures** for consistent test data
+4. **Test error scenarios** thoroughly
+5. **Measure test coverage** and maintain high standards
+6. **Test performance characteristics** for large inputs
+7. **Use integration tests** for VS Code API interactions
+8. **Implement continuous testing** in CI/CD pipeline
+9. **Organize tests by feature** not by type
+10. **Use descriptive test names** that explain the scenario
+
+Remember: Good testing practices ensure your extension works reliably and makes debugging easier when issues arise.
+description:
+globs:
+alwaysApply: false
+---

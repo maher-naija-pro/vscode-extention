@@ -1,0 +1,571 @@
+# Security & Validation for VS Code Extensions
+
+## Overview
+This rule ensures VS Code extensions implement proper security measures, input validation, and follow security best practices to protect users and their systems.
+
+## Input Validation
+
+### 1. User Input Sanitization
+```typescript
+// ✅ Good: Validate and sanitize all user inputs
+class InputValidator {
+    static validateFilePath(input: string): string | null {
+        // Check for path traversal attempts
+        if (input.includes('..') || input.includes('//')) {
+            return null;
+        }
+        
+        // Remove any non-alphanumeric characters except allowed ones
+        const sanitized = input.replace(/[^a-zA-Z0-9\-_./\\]/g, '');
+        
+        // Ensure it's a relative path
+        if (sanitized.startsWith('/') || sanitized.startsWith('\\')) {
+            return null;
+        }
+        
+        return sanitized || null;
+    }
+    
+    static validateSearchQuery(input: string): string | null {
+        if (!input || typeof input !== 'string') {
+            return null;
+        }
+        
+        // Limit query length to prevent DoS
+        if (input.length > 1000) {
+            return null;
+        }
+        
+        // Remove potentially dangerous characters
+        return input.replace(/[<>\"'&]/g, '');
+    }
+    
+    static validateCommand(input: string): string | null {
+        // Whitelist approach for commands
+        const allowedCommands = ['search', 'replace', 'format', 'analyze'];
+        
+        if (!allowedCommands.includes(input)) {
+            return null;
+        }
+        
+        return input;
+    }
+}
+
+// ❌ Bad: No input validation
+function processUserInput(input: string): void {
+    // Directly use user input without validation
+    const command = `system.${input}`;
+    executeCommand(command);
+}
+```
+
+### 2. File Path Validation
+```typescript
+// ✅ Good: Secure file path handling
+class SecureFileHandler {
+    static validateAndResolvePath(userPath: string, basePath: string): string | null {
+        try {
+            // Normalize and resolve path
+            const normalizedPath = path.normalize(userPath);
+            const resolvedPath = path.resolve(basePath, normalizedPath);
+            
+            // Ensure the resolved path is within the base path
+            if (!resolvedPath.startsWith(basePath)) {
+                return null;
+            }
+            
+            // Check for path traversal attempts
+            if (resolvedPath.includes('..')) {
+                return null;
+            }
+            
+            return resolvedPath;
+        } catch (error) {
+            return null;
+        }
+    }
+    
+    static isSafeFileExtension(filename: string): boolean {
+        const allowedExtensions = ['.txt', '.md', '.json', '.ts', '.js', '.html', '.css'];
+        const ext = path.extname(filename).toLowerCase();
+        
+        return allowedExtensions.includes(ext);
+    }
+    
+    static validateFileAccess(filePath: string, workspaceRoot: string): boolean {
+        // Ensure file is within workspace
+        const absolutePath = path.resolve(filePath);
+        const workspacePath = path.resolve(workspaceRoot);
+        
+        return absolutePath.startsWith(workspacePath);
+    }
+}
+```
+
+### 3. Configuration Validation
+```typescript
+// ✅ Good: Validate configuration values
+interface ExtensionConfig {
+    maxFileSize: number;
+    allowedDomains: string[];
+    timeout: number;
+    enableLogging: boolean;
+}
+
+class ConfigValidator {
+    static validateConfig(config: any): ExtensionConfig | null {
+        try {
+            // Validate maxFileSize
+            if (typeof config.maxFileSize !== 'number' || config.maxFileSize <= 0) {
+                throw new Error('Invalid maxFileSize');
+            }
+            
+            // Validate allowedDomains
+            if (!Array.isArray(config.allowedDomains)) {
+                throw new Error('allowedDomains must be an array');
+            }
+            
+            for (const domain of config.allowedDomains) {
+                if (typeof domain !== 'string' || !this.isValidDomain(domain)) {
+                    throw new Error(`Invalid domain: ${domain}`);
+                }
+            }
+            
+            // Validate timeout
+            if (typeof config.timeout !== 'number' || config.timeout < 1000 || config.timeout > 300000) {
+                throw new Error('Timeout must be between 1000 and 300000 ms');
+            }
+            
+            // Validate enableLogging
+            if (typeof config.enableLogging !== 'boolean') {
+                throw new Error('enableLogging must be a boolean');
+            }
+            
+            return config as ExtensionConfig;
+        } catch (error) {
+            console.error('Configuration validation failed:', error);
+            return null;
+        }
+    }
+    
+    private static isValidDomain(domain: string): boolean {
+        const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+        return domainRegex.test(domain);
+    }
+}
+```
+
+## API Security
+
+### 4. External API Calls
+```typescript
+// ✅ Good: Secure external API communication
+class SecureApiClient {
+    private readonly allowedDomains: string[];
+    private readonly timeout: number;
+    
+    constructor(config: ExtensionConfig) {
+        this.allowedDomains = config.allowedDomains;
+        this.timeout = config.timeout;
+    }
+    
+    async makeRequest(url: string, options: RequestInit = {}): Promise<Response> {
+        // Validate URL
+        if (!this.isAllowedDomain(url)) {
+            throw new Error('Domain not allowed');
+        }
+        
+        // Set secure defaults
+        const secureOptions: RequestInit = {
+            ...options,
+            timeout: this.timeout,
+            headers: {
+                'User-Agent': 'VS-Code-Extension/1.0',
+                ...options.headers
+            }
+        };
+        
+        // Use AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+        
+        try {
+            const response = await fetch(url, {
+                ...secureOptions,
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    }
+    
+    private isAllowedDomain(url: string): boolean {
+        try {
+            const urlObj = new URL(url);
+            return this.allowedDomains.some(domain => 
+                urlObj.hostname === domain || urlObj.hostname.endsWith(`.${domain}`)
+            );
+        } catch {
+            return false;
+        }
+    }
+}
+```
+
+### 5. Authentication & Secrets
+```typescript
+// ✅ Good: Secure credential management
+class SecureCredentialManager {
+    private readonly keytar: any;
+    
+    constructor() {
+        // Use VS Code's built-in credential storage
+        this.keytar = require('keytar');
+    }
+    
+    async storeCredential(service: string, account: string, password: string): Promise<void> {
+        try {
+            await this.keytar.setPassword(service, account, password);
+        } catch (error) {
+            console.error('Failed to store credential:', error);
+            throw new Error('Failed to store credential securely');
+        }
+    }
+    
+    async getCredential(service: string, account: string): Promise<string | null> {
+        try {
+            return await this.keytar.getPassword(service, account);
+        } catch (error) {
+            console.error('Failed to retrieve credential:', error);
+            return null;
+        }
+    }
+    
+    async deleteCredential(service: string, account: string): Promise<boolean> {
+        try {
+            return await this.keytar.deletePassword(service, account);
+        } catch (error) {
+            console.error('Failed to delete credential:', error);
+            return false;
+        }
+    }
+}
+
+// ❌ Bad: Hardcoded credentials
+class BadCredentialManager {
+    private readonly apiKey = 'sk-1234567890abcdef'; // Never do this!
+    private readonly password = 'secret123'; // Never do this!
+}
+```
+
+## File System Security
+
+### 6. Safe File Operations
+```typescript
+// ✅ Good: Secure file operations
+class SecureFileOperations {
+    static async readFileSafely(filePath: string, workspaceRoot: string): Promise<string | null> {
+        try {
+            // Validate file access
+            if (!SecureFileHandler.validateFileAccess(filePath, workspaceRoot)) {
+                throw new Error('Access denied: File outside workspace');
+            }
+            
+            // Check file size
+            const stats = await vscode.workspace.fs.stat(vscode.Uri.file(filePath));
+            if (stats.size > 10 * 1024 * 1024) { // 10MB limit
+                throw new Error('File too large');
+            }
+            
+            // Read file content
+            const content = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+            return content.toString();
+        } catch (error) {
+            console.error('File read failed:', error);
+            return null;
+        }
+    }
+    
+    static async writeFileSafely(filePath: string, content: string, workspaceRoot: string): Promise<boolean> {
+        try {
+            // Validate file access
+            if (!SecureFileHandler.validateFileAccess(filePath, workspaceRoot)) {
+                throw new Error('Access denied: File outside workspace');
+            }
+            
+            // Validate file extension
+            if (!SecureFileHandler.isSafeFileExtension(filePath)) {
+                throw new Error('File type not allowed');
+            }
+            
+            // Write file
+            await vscode.workspace.fs.writeFile(
+                vscode.Uri.file(filePath),
+                Buffer.from(content)
+            );
+            
+            return true;
+        } catch (error) {
+            console.error('File write failed:', error);
+            return false;
+        }
+    }
+}
+```
+
+### 7. Temporary File Security
+```typescript
+// ✅ Good: Secure temporary file handling
+class SecureTempFileManager {
+    private readonly tempDir: string;
+    private readonly createdFiles: Set<string> = new Set();
+    
+    constructor() {
+        this.tempDir = path.join(os.tmpdir(), `vscode-extension-${Date.now()}`);
+        fs.mkdirSync(this.tempDir, { recursive: true });
+    }
+    
+    async createTempFile(content: string, extension: string = '.tmp'): Promise<string> {
+        // Generate secure random filename
+        const filename = crypto.randomBytes(16).toString('hex') + extension;
+        const filePath = path.join(this.tempDir, filename);
+        
+        // Write content
+        await vscode.workspace.fs.writeFile(
+            vscode.Uri.file(filePath),
+            Buffer.from(content)
+        );
+        
+        this.createdFiles.add(filePath);
+        return filePath;
+    }
+    
+    async cleanup(): Promise<void> {
+        // Remove all created temporary files
+        for (const filePath of this.createdFiles) {
+            try {
+                await vscode.workspace.fs.delete(vscode.Uri.file(filePath));
+            } catch (error) {
+                console.warn('Failed to delete temp file:', filePath, error);
+            }
+        }
+        
+        this.createdFiles.clear();
+        
+        // Remove temp directory
+        try {
+            await vscode.workspace.fs.rmdir(vscode.Uri.file(this.tempDir));
+        } catch (error) {
+            console.warn('Failed to remove temp directory:', error);
+        }
+    }
+}
+```
+
+## Web Content Security
+
+### 8. Webview Security
+```typescript
+// ✅ Good: Secure webview configuration
+class SecureWebviewProvider {
+    private readonly extensionUri: vscode.Uri;
+    
+    constructor(extensionUri: vscode.Uri) {
+        this.extensionUri = extensionUri;
+    }
+    
+    createWebview(panel: vscode.WebviewPanel): void {
+        // Set secure content security policy
+        panel.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this.extensionUri]
+        };
+        
+        // Set strict CSP
+        panel.webview.html = this.getSecureHtml(panel.webview);
+    }
+    
+    private getSecureHtml(webview: vscode.Webview): string {
+        const scriptUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, 'media', 'script.js')
+        );
+        
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta http-equiv="Content-Security-Policy" 
+                      content="default-src 'none'; 
+                               script-src 'unsafe-inline' ${scriptUri}; 
+                               style-src 'unsafe-inline'; 
+                               img-src data: https:;">
+                <title>Secure Webview</title>
+            </head>
+            <body>
+                <div id="app"></div>
+                <script src="${scriptUri}"></script>
+            </body>
+            </html>
+        `;
+    }
+}
+```
+
+### 9. HTML Content Sanitization
+```typescript
+// ✅ Good: Sanitize HTML content
+class HtmlSanitizer {
+    static sanitize(html: string): string {
+        // Remove potentially dangerous tags and attributes
+        const dangerousTags = ['script', 'iframe', 'object', 'embed', 'form'];
+        const dangerousAttributes = ['onclick', 'onload', 'onerror', 'javascript:'];
+        
+        let sanitized = html;
+        
+        // Remove dangerous tags
+        for (const tag of dangerousTags) {
+            const regex = new RegExp(`<${tag}[^>]*>.*?</${tag}>`, 'gis');
+            sanitized = sanitized.replace(regex, '');
+        }
+        
+        // Remove dangerous attributes
+        for (const attr of dangerousAttributes) {
+            const regex = new RegExp(`${attr}\\s*=\\s*["'][^"']*["']`, 'gi');
+            sanitized = sanitized.replace(regex, '');
+        }
+        
+        // Remove any remaining script content
+        sanitized = sanitized.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+        
+        return sanitized;
+    }
+    
+    static validateUrl(url: string): boolean {
+        try {
+            const urlObj = new URL(url);
+            return ['http:', 'https:'].includes(urlObj.protocol);
+        } catch {
+            return false;
+        }
+    }
+}
+```
+
+## Error Handling & Logging
+
+### 10. Secure Error Handling
+```typescript
+// ✅ Good: Secure error handling without information leakage
+class SecureErrorHandler {
+    static handleError(error: Error, context: string): void {
+        // Log full error for debugging (but not to user)
+        console.error(`Error in ${context}:`, error);
+        
+        // Show sanitized error message to user
+        const userMessage = this.sanitizeErrorMessage(error.message);
+        vscode.window.showErrorMessage(`Operation failed: ${userMessage}`);
+    }
+    
+    private static sanitizeErrorMessage(message: string): string {
+        // Remove potentially sensitive information
+        return message
+            .replace(/\/home\/[^\/]+\//g, '/home/user/')
+            .replace(/\/Users\/[^\/]+\//g, '/Users/user/')
+            .replace(/C:\\Users\\[^\\]+\\/g, 'C:\\Users\\user\\')
+            .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]')
+            .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '[CREDIT_CARD]');
+    }
+    
+    static logSecurityEvent(event: string, details: Record<string, any>): void {
+        // Log security-related events
+        console.warn(`SECURITY EVENT: ${event}`, {
+            timestamp: new Date().toISOString(),
+            ...details
+        });
+    }
+}
+```
+
+### 11. Audit Logging
+```typescript
+// ✅ Good: Comprehensive audit logging
+class SecurityAuditLogger {
+    private readonly logFile: string;
+    
+    constructor() {
+        this.logFile = path.join(os.tmpdir(), 'vscode-extension-audit.log');
+    }
+    
+    logSecurityEvent(event: SecurityEvent): void {
+        const logEntry = {
+            timestamp: new Date().toISOString(),
+            event: event.type,
+            user: event.user,
+            resource: event.resource,
+            action: event.action,
+            result: event.result,
+            ip: event.ip || 'unknown',
+            userAgent: event.userAgent || 'unknown'
+        };
+        
+        const logLine = JSON.stringify(logEntry) + '\n';
+        
+        // Append to log file
+        fs.appendFileSync(this.logFile, logLine);
+        
+        // Also log to console for development
+        console.log('SECURITY AUDIT:', logEntry);
+    }
+    
+    getAuditLog(): string[] {
+        try {
+            const content = fs.readFileSync(this.logFile, 'utf8');
+            return content.split('\n').filter(line => line.trim());
+        } catch {
+            return [];
+        }
+    }
+}
+
+interface SecurityEvent {
+    type: 'file_access' | 'api_call' | 'authentication' | 'configuration_change';
+    user: string;
+    resource: string;
+    action: string;
+    result: 'success' | 'failure' | 'denied';
+    ip?: string;
+    userAgent?: string;
+}
+```
+
+## Best Practices Summary
+
+1. **Always validate user input** before processing
+2. **Sanitize file paths** to prevent directory traversal attacks
+3. **Use HTTPS** for all external API calls
+4. **Implement proper authentication** without hardcoding credentials
+5. **Validate file types and sizes** before processing
+6. **Use secure temporary file handling** with cleanup
+7. **Implement Content Security Policy** for webviews
+8. **Sanitize HTML content** to prevent XSS attacks
+9. **Log security events** for audit purposes
+10. **Never expose sensitive information** in error messages
+11. **Use VS Code's built-in security features** when available
+12. **Regularly update dependencies** to patch security vulnerabilities
+
+Remember: Security is not a one-time implementation but an ongoing process. Regularly review and update security measures as new threats emerge.
+description:
+globs:
+alwaysApply: false
+---
