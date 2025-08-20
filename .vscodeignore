@@ -1,0 +1,40 @@
+# Source files (not needed in distribution)
+src/
+*.ts
+*.tsx
+
+# Development files
+.git/
+.gitignore
+.cursor/
+.vscode/
+node_modules/
+*.log
+*.map
+
+# Build artifacts
+out/*.map
+out/test/
+
+# Documentation (optional - remove if you want these included)
+BUILD_SCRIPTS.md
+BUILD_AND_INSTALL.md
+
+# Build scripts (not needed in distribution)
+build.sh
+build.bat
+
+# Package management
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

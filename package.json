@@ -25,7 +25,9 @@
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
-        "test": "node ./out/test/runTest.js"
+        "test": "node ./out/test/runTest.js",
+        "build": "./build.sh",
+        "build:vsix": "npm run compile && npx vsce package"
     },
     "devDependencies": {
         "@types/glob": "^8.1.0",
@@ -35,6 +37,7 @@
         "@typescript-eslint/eslint-plugin": "^6.0.0",
         "@typescript-eslint/parser": "^6.0.0",
         "@vscode/test-electron": "^2.5.2",
+        "@vscode/vsce": "^3.6.0",
         "eslint": "^8.0.0",
         "typescript": "^5.0.0"
     },
