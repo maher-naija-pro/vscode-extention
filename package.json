@@ -12,12 +12,50 @@
     "activationEvents": [],
     "main": "./out/extension.js",
     "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "outscale-agent",
+                    "title": "Outscale Agent",
+                    "icon": "$(rocket)"
+                }
+            ]
+        },
+        "views": {
+            "outscale-agent": [
+                {
+                    "id": "outscale-agent-view",
+                    "name": "test",
+                    "type": "webview"
+                }
+            ]
+        },
         "commands": [
             {
-                "command": "vscode-extension.helloWorld",
-                "title": "Hello World"
+                "command": "outscale-agent.openView",
+                "title": "Open Outscale Agent",
+                "category": "Outscale Agent"
+            },
+            {
+                "command": "outscale-agent.createAgent",
+                "title": "New Agent",
+                "category": "Outscale Agent"
+            },
+            {
+                "command": "outscale-agent.searchAgents",
+                "title": "Search Agents",
+                "category": "Outscale Agent"
             }
-        ]
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "outscale-agent.createAgent",
+                    "when": "view == outscale-agent-view",
+                    "group": "navigation"
+                }
+            ]
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
